@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import Safe from '@safe-global/protocol-kit';
 import { formatUnits, createPublicClient, custom, type EIP1193Provider } from 'viem';
@@ -10,7 +10,6 @@ import SafeCard, { SafeData } from './components/SafeCard';
 // --- Configuration ---
 const PIMLICO_API_KEY = process.env.NEXT_PUBLIC_PIMLICO_API_KEY;
 
-// USDC ABI (Partial)
 const ERC20_ABI = [{ type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }] }] as const;
 
 const CHAIN_CONFIG: any = {
@@ -34,29 +33,149 @@ const CHAIN_CONFIG: any = {
   }
 };
 
+// --- Storage Helpers ---
+const getStoredAddresses = (chainId: number): string[] => {
+  if (typeof window === 'undefined') return [];
+  const raw = localStorage.getItem(`safes_${chainId}`);
+  return raw ? JSON.parse(raw) : [];
+};
+
+const addAddressToStorage = (chainId: number, address: string) => {
+  const current = getStoredAddresses(chainId);
+  if (!current.includes(address)) {
+    localStorage.setItem(`safes_${chainId}`, JSON.stringify([...current, address]));
+  }
+};
+
+const removeAddressFromStorage = (chainId: number, address: string) => {
+  const current = getStoredAddresses(chainId);
+  const updated = current.filter(a => a !== address);
+  localStorage.setItem(`safes_${chainId}`, JSON.stringify(updated));
+};
+
 export default function Home() {
   const { login, authenticated, logout, user } = usePrivy();
   const { wallets } = useWallets();
 
   const [currentChainId, setCurrentChainId] = useState<number>(84532);
   const [safeAddressInput, setSafeAddressInput] = useState('');
+
+  // Safes State
   const [safes, setSafes] = useState<SafeData[]>([]);
+  const [isInitializing, setIsInitializing] = useState(false);
   const [loadingSafe, setLoadingSafe] = useState(false);
   const [error, setError] = useState('');
 
-  const getProvider = async (): Promise<EIP1193Provider> => {
+  // 1. Get Provider Helper
+  const getProvider = useCallback(async (targetChainId: number = currentChainId): Promise<EIP1193Provider> => {
     const wallet = wallets.find((w) => w.address === user?.wallet?.address);
     if (!wallet) throw new Error('Wallet not found');
     const walletChainId = Number(wallet.chainId.split(':')[1]);
-    if (walletChainId !== currentChainId) await wallet.switchChain(currentChainId);
+
+    // Only switch if strictly necessary for the action
+    if (walletChainId !== targetChainId) {
+      await wallet.switchChain(targetChainId);
+    }
     return await wallet.getEthereumProvider() as unknown as EIP1193Provider;
+  }, [wallets, user, currentChainId]);
+
+  // 2. Core Fetcher Logic (Reusable)
+  const fetchSafeData = async (address: string, chainId: number, provider: any): Promise<SafeData> => {
+    const config = CHAIN_CONFIG[chainId];
+    const userAddress = user?.wallet?.address as `0x${string}`;
+
+    // Init Protocol Kit
+    const protocolKit = await Safe.init({
+      provider: provider,
+      safeAddress: address,
+      signer: userAddress,
+    });
+
+    // Fetch Data
+    const publicClient = createPublicClient({ chain: config.chainObj, transport: custom(provider) });
+
+    const [owners, threshold, version, modules, isOwner, usdcBalanceRaw] = await Promise.all([
+      protocolKit.getOwners(),
+      protocolKit.getThreshold(),
+      protocolKit.getContractVersion(),
+      protocolKit.getModules(),
+      protocolKit.isOwner(userAddress),
+      publicClient.readContract({
+        address: config.usdcAddress,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf',
+        args: [address as `0x${string}`]
+      })
+    ]);
+
+    const has4337 = modules.some((m: string) => m.toLowerCase() === config.moduleAddress.toLowerCase());
+
+    return {
+      id: `${chainId}-${address}`, // Unique ID per chain
+      address: address,
+      version,
+      threshold,
+      owners,
+      balanceUSDC: formatUnits(usdcBalanceRaw, 6),
+      isOwner,
+      modules,
+      is4337Enabled: has4337
+    };
   };
 
+  // 3. Hydrate State on Chain Change or Auth
+  useEffect(() => {
+    const hydrateSafes = async () => {
+      if (!authenticated || !user?.wallet) return;
+
+      setIsInitializing(true);
+      setSafes([]); // Clear view temporarily
+      setError('');
+
+      try {
+        const storedAddresses = getStoredAddresses(currentChainId);
+        if (storedAddresses.length === 0) {
+          setIsInitializing(false);
+          return;
+        }
+
+        const provider = await getProvider(currentChainId);
+
+        // Fetch all stored safes in parallel
+        const results = await Promise.allSettled(
+          storedAddresses.map(addr => fetchSafeData(addr, currentChainId, provider))
+        );
+
+        const loadedSafes: SafeData[] = [];
+
+        results.forEach((res, index) => {
+          if (res.status === 'fulfilled') {
+            loadedSafes.push(res.value);
+          } else {
+            console.error(`Failed to load safe ${storedAddresses[index]}:`, res.reason);
+            // Optional: remove invalid safe from storage?
+            // removeAddressFromStorage(currentChainId, storedAddresses[index]);
+          }
+        });
+
+        setSafes(loadedSafes);
+      } catch (err) {
+        console.error("Hydration error:", err);
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+
+    hydrateSafes();
+  }, [currentChainId, authenticated, user?.wallet?.address]); // Removed getProvider from deps to avoid loops
+
+  // 4. Add Safe Handler
   const handleAddSafe = async () => {
     if (!safeAddressInput || !authenticated) return;
-    // Check duplicates
+
+    // Duplicate Check
     if (safes.find(s => s.address.toLowerCase() === safeAddressInput.toLowerCase())) {
-      setError('Safe already added.');
+      setError('Safe already in list.');
       return;
     }
 
@@ -65,63 +184,35 @@ export default function Home() {
 
     try {
       const provider = await getProvider();
-      const config = CHAIN_CONFIG[currentChainId];
-      const userAddress = user?.wallet?.address as `0x${string}`;
+      const newSafe = await fetchSafeData(safeAddressInput, currentChainId, provider);
 
-      // 1. Init Safe
-      const protocolKit = await Safe.init({
-        provider: provider as any,
-        safeAddress: safeAddressInput,
-        signer: userAddress,
-      });
-
-      // 2. Data Fetching
-      const publicClient = createPublicClient({ chain: config.chainObj, transport: custom(provider) });
-      const [owners, threshold, version, modules, isOwner, usdcBalanceRaw] = await Promise.all([
-        protocolKit.getOwners(),
-        protocolKit.getThreshold(),
-        protocolKit.getContractVersion(),
-        protocolKit.getModules(),
-        protocolKit.isOwner(userAddress),
-        publicClient.readContract({ address: config.usdcAddress, abi: ERC20_ABI, functionName: 'balanceOf', args: [safeAddressInput as `0x${string}`] })
-      ]);
-
-      const has4337 = modules.some(m => m.toLowerCase() === config.moduleAddress.toLowerCase());
-
-      const newSafe: SafeData = {
-        id: Math.random().toString(36).substr(2, 9),
-        address: safeAddressInput,
-        version,
-        threshold,
-        owners,
-        balanceUSDC: formatUnits(usdcBalanceRaw, 6),
-        isOwner,
-        modules,
-        is4337Enabled: has4337
-      };
-
+      // Update State
       setSafes(prev => [...prev, newSafe]);
-      setSafeAddressInput(''); // Clear input on success
+      // Update Storage
+      addAddressToStorage(currentChainId, newSafe.address);
+
+      setSafeAddressInput('');
     } catch (e: any) {
       console.error(e);
-      setError('Could not load Safe. Check network or address.');
+      setError('Could not load Safe. Please check the address and network.');
     } finally {
       setLoadingSafe(false);
     }
   };
 
-  const removeSafe = (id: string) => {
-    setSafes(prev => prev.filter(s => s.id !== id));
-  };
-
-  const handleChainChange = (chainId: number) => {
-    setCurrentChainId(chainId);
-    setSafes([]); // Clear safes on chain switch to avoid errors
+  // 5. Remove Safe Handler
+  const removeSafe = (safeId: string) => {
+    const safeToRemove = safes.find(s => s.id === safeId);
+    if (safeToRemove) {
+      // Update State
+      setSafes(prev => prev.filter(s => s.id !== safeId));
+      // Update Storage
+      removeAddressFromStorage(currentChainId, safeToRemove.address);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans">
-      {/* Navbar */}
       <nav className="border-b border-gray-800 bg-gray-900/80 backdrop-blur-md sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 h-16 flex justify-between items-center">
           <div className="flex items-center gap-4">
@@ -134,7 +225,7 @@ export default function Home() {
               <select
                 className="bg-gray-800 border border-gray-700 text-sm rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
                 value={currentChainId}
-                onChange={(e) => handleChainChange(Number(e.target.value))}
+                onChange={(e) => setCurrentChainId(Number(e.target.value))}
               >
                 <option value={84532}>Base Sepolia</option>
                 <option value={8453}>Base Mainnet</option>
@@ -151,7 +242,6 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 py-10">
         {!authenticated ? (
           <div className="flex flex-col items-center justify-center h-[60vh]">
@@ -163,7 +253,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="space-y-10">
-            {/* Add Safe Bar */}
+            {/* Input Area */}
             <div className="max-w-2xl mx-auto">
               <div className="flex gap-2 relative">
                 <input
@@ -185,25 +275,33 @@ export default function Home() {
               {error && <p className="text-red-400 text-sm mt-2 text-center">{error}</p>}
             </div>
 
-            {/* Grid of Safes */}
-            {safes.length === 0 ? (
-              <div className="text-center py-20 border-2 border-dashed border-gray-800 rounded-2xl">
-                <p className="text-gray-600">No Safes loaded yet. Enter an address above.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {safes.map(safe => (
-                  <SafeCard
-                    key={safe.id}
-                    data={safe}
-                    currentUserAddress={user?.wallet?.address!}
-                    config={CHAIN_CONFIG[currentChainId]}
-                    getProvider={getProvider}
-                    onRemove={removeSafe}
-                  />
-                ))}
+            {/* Loading State */}
+            {isInitializing && (
+              <div className="flex justify-center py-20">
+                <div className="animate-pulse text-gray-500">Loading your Safes from {CHAIN_CONFIG[currentChainId].name}...</div>
               </div>
             )}
+
+            {/* Empty State */}
+            {!isInitializing && safes.length === 0 && (
+              <div className="text-center py-20 border-2 border-dashed border-gray-800 rounded-2xl">
+                <p className="text-gray-600">No Safes on {CHAIN_CONFIG[currentChainId].name} yet.</p>
+              </div>
+            )}
+
+            {/* Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {safes.map(safe => (
+                <SafeCard
+                  key={safe.id}
+                  data={safe}
+                  currentUserAddress={user?.wallet?.address!}
+                  config={CHAIN_CONFIG[currentChainId]}
+                  getProvider={() => getProvider(currentChainId)}
+                  onRemove={removeSafe}
+                />
+              ))}
+            </div>
           </div>
         )}
       </main>

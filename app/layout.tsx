@@ -6,8 +6,8 @@ import Providers from './providers';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Safe + Privy + Pimlico',
-  description: 'Hybrid Safe execution demo',
+  title: 'FONDU-FUNDS-BACK-INATOR',
+  description: 'By Dr. Heinz Doofenshmirtz',
 };
 
 export default function RootLayout({

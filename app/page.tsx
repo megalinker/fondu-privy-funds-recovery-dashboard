@@ -22,7 +22,7 @@ const CHAIN_CONFIG: any = {
     chainObj: baseSepolia,
     bundlerUrl: `https://api.pimlico.io/v2/84532/rpc?apikey=${PIMLICO_API_KEY}`,
     paymasterUrl: `https://api.pimlico.io/v2/84532/rpc?apikey=${PIMLICO_API_KEY}`,
-    moduleAddress: '0x75cf11467937ce3F2f357CE24ffc9437809C22a8',
+    moduleAddress: '0x75cf11467937ce3F2f357CE24ffc3DBF8fD5c226',
     explorer: 'https://sepolia.basescan.org',
     usdcAddress: '0x036CbD53842c5426634e7929541eC2318f3dCF7e'
   },
@@ -31,7 +31,7 @@ const CHAIN_CONFIG: any = {
     chainObj: base,
     bundlerUrl: `https://api.pimlico.io/v2/8453/rpc?apikey=${PIMLICO_API_KEY}`,
     paymasterUrl: `https://api.pimlico.io/v2/8453/rpc?apikey=${PIMLICO_API_KEY}`,
-    moduleAddress: '0x75cf11467937ce3F2f357CE24ffc9437809C22a8',
+    moduleAddress: '0x75cf11467937ce3F2f357CE24ffc3DBF8fD5c226',
     explorer: 'https://basescan.org',
     usdcAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
   }

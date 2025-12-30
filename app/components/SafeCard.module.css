@@ -1,0 +1,217 @@
+/* --- File: app/components/SafeCard.module.css --- */
+
+.card {
+    position: relative;
+    background: var(--bg-panel);
+    border: 1px solid #3f3f46;
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.card:hover {
+    border-color: var(--accent-purple);
+    box-shadow: 0 0 20px rgba(147, 51, 234, 0.15);
+    transform: translateY(-2px);
+}
+
+/* Header Area */
+.header {
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid #27272a;
+}
+
+.iconWrapper {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-input);
+    color: var(--text-muted);
+}
+
+.info {
+    margin-left: 12px;
+}
+
+.titleRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.title {
+    font-weight: 700;
+    font-size: 1rem;
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.badge {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Address Button */
+.copyBtn {
+    margin-top: 4px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: color 0.2s;
+}
+
+.copyBtn:hover {
+    color: white;
+}
+
+.removeBtn {
+    color: #52525b;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+}
+
+.removeBtn:hover {
+    color: var(--accent-red);
+}
+
+/* Balance Area */
+.balanceSection {
+    padding: 24px 20px;
+}
+
+.label {
+    display: block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    letter-spacing: 1px;
+}
+
+.value {
+    font-family: var(--font-mono);
+    font-size: 2rem;
+    font-weight: 600;
+    color: white;
+    letter-spacing: -1px;
+}
+
+.currency {
+    font-size: 1rem;
+    color: var(--text-muted);
+    margin-left: 6px;
+}
+
+/* Actions */
+.actions {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 16px 20px;
+    border-top: 1px solid #27272a;
+}
+
+.statusRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.owners {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: #27272a;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+
+.actionBtn {
+    background: white;
+    color: black;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.actionBtn:hover {
+    background: #e4e4e7;
+}
+
+.actionBtn.cancel {
+    background: #27272a;
+    color: white;
+}
+
+/* The Form */
+.form {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px dashed #3f3f46;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.input {
+    background: var(--bg-input);
+    border: 1px solid #3f3f46;
+    color: white;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    width: 100%;
+    outline: none;
+}
+
+.input:focus {
+    border-color: var(--accent-purple);
+}
+
+.fireBtn {
+    background: var(--accent-purple);
+    color: white;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: opacity 0.2s;
+}
+
+.fireBtn:hover {
+    opacity: 0.9;
+}
+
+.fireBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

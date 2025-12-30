@@ -1,0 +1,226 @@
+/* --- File: app/page.module.css --- */
+
+/* Navigation */
+.nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 64px;
+    background: rgba(24, 24, 27, 0.8);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid #27272a;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.navInner {
+    width: 100%;
+    max-width: 1200px;
+    padding: 0 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    font-family: var(--font-display);
+    /* Keep the Impact font only here */
+    font-size: 1.5rem;
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.chainBadge {
+    background: #27272a;
+    color: #a1a1aa;
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.logoutBtn {
+    background: transparent;
+    border: none;
+    color: #71717a;
+    cursor: pointer;
+    padding: 8px;
+    transition: color 0.2s;
+}
+
+.logoutBtn:hover {
+    color: white;
+}
+
+.networkControl {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.networkSelect {
+    appearance: none;
+    /* Remove default browser arrow */
+    -webkit-appearance: none;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    color: #e4e4e7;
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 8px 36px 8px 12px;
+    /* Extra padding on right for the icon */
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    outline: none;
+}
+
+.networkSelect:hover {
+    background: #3f3f46;
+    border-color: #52525b;
+}
+
+.networkSelect:focus {
+    border-color: #9333ea;
+    /* Purple focus ring */
+    box-shadow: 0 0 0 2px rgba(147, 51, 234, 0.2);
+}
+
+.selectIcon {
+    position: absolute;
+    right: 10px;
+    pointer-events: none;
+    /* Let clicks pass through to the select */
+    color: #a1a1aa;
+}
+
+/* Main Layout */
+.main {
+    max-width: 1200px;
+    margin: 100px auto 40px;
+    padding: 0 24px;
+}
+
+/* Hero (Logged Out) */
+.hero {
+    text-align: center;
+    padding: 80px 20px;
+}
+
+.heroTitle {
+    font-family: var(--font-display);
+    font-size: 3rem;
+    margin-bottom: 16px;
+    color: white;
+    letter-spacing: 1px;
+}
+
+.heroSubtitle {
+    color: #a1a1aa;
+    max-width: 500px;
+    margin: 0 auto 32px;
+    line-height: 1.6;
+}
+
+.heroBtn {
+    background: white;
+    color: black;
+    border: none;
+    padding: 14px 28px;
+    font-weight: 700;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.heroBtn:hover {
+    transform: scale(1.05);
+}
+
+/* Dashboard Controls */
+.dashboardControls {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 20px;
+}
+
+.totalLabel {
+    display: block;
+    font-size: 0.85rem;
+    color: #a1a1aa;
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+
+.totalAmount {
+    font-size: 3rem;
+    font-weight: 700;
+    color: white;
+    letter-spacing: -1px;
+    line-height: 1;
+}
+
+.searchBar {
+    display: flex;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 12px;
+    padding: 6px;
+    width: 100%;
+    max-width: 400px;
+}
+
+.searchInput {
+    background: transparent;
+    border: none;
+    padding: 8px 12px;
+    color: white;
+    flex: 1;
+    outline: none;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+}
+
+.addBtn {
+    background: white;
+    color: black;
+    border: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.addBtn:hover {
+    background: #e4e4e7;
+}
+
+.addBtn:disabled {
+    opacity: 0.5;
+}
+
+/* Grid */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 24px;
+}
+
+.empty {
+    text-align: center;
+    padding: 80px;
+    border: 1px dashed #3f3f46;
+    border-radius: 16px;
+    color: #52525b;
+}

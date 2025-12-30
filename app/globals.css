@@ -1,40 +1,55 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
+/* --- File: app/globals.css --- */
 :root {
-  --background: 10 10 15; /* Very dark slate */
-  --foreground: 255 255 255;
+  /* Deep, matte backgrounds instead of pure black */
+  --bg-deep: #0f1014;
+  --bg-panel: #18181b;
+  --bg-input: #27272a;
+
+  /* Refined Accents - Softer on the eyes */
+  --accent-purple: #9333ea;
+  --accent-purple-dim: rgba(147, 51, 234, 0.1);
+  --accent-green: #22c55e;
+  --accent-red: #ef4444;
+
+  --text-main: #f4f4f5;
+  --text-muted: #a1a1aa;
+
+  /* Fonts: Clean sans for UI, Impact only for specific headers */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: Impact, Haettenschweiler, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
 }
 
 body {
-  color: rgb(var(--foreground));
-  background: radial-gradient(
-      circle at 50% 0%, 
-      rgba(59, 130, 246, 0.15) 0%, 
-      transparent 50%
-    ),
-    radial-gradient(
-      circle at 100% 0%, 
-      rgba(139, 92, 246, 0.1) 0%, 
-      transparent 50%
-    ),
-    #09090b; /* Fallback dark */
+  background-color: var(--bg-deep);
+  color: var(--text-main);
+  font-family: var(--font-ui);
   min-height: 100vh;
+  /* Very subtle vignette instead of grid */
+  background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, transparent 40%);
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Global utility for cards */
+.sleek-panel {
+  background: var(--bg-panel);
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+/* Animations */
+.spin-anim {
+  animation: spin 1s linear infinite;
 }
-::-webkit-scrollbar-thumb {
-  background: #3f3f46;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

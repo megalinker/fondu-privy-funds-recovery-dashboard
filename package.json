@@ -9,9 +9,14 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@privy-io/react-auth": "^3.10.0",
+    "@safe-global/protocol-kit": "^6.1.2",
+    "@safe-global/relay-kit": "^4.1.1",
+    "@safe-global/types-kit": "^3.0.0",
     "next": "16.1.1",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "viem": "^2.43.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

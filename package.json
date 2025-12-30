@@ -13,9 +13,14 @@
     "@safe-global/protocol-kit": "^6.1.2",
     "@safe-global/relay-kit": "^4.1.1",
     "@safe-global/types-kit": "^3.0.0",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.23.26",
+    "lucide-react": "^0.562.0",
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.4.0",
     "viem": "^2.43.3"
   },
   "devDependencies": {

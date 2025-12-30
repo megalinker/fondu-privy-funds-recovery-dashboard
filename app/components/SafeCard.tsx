@@ -1,24 +1,22 @@
 'use client';
 
 import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { toast } from 'sonner';
+import {
+    Wallet, Shield, Zap, ExternalLink, Copy,
+    Trash2, Send, Users, Activity
+} from 'lucide-react';
 import Safe from '@safe-global/protocol-kit';
 import { Safe4337Pack } from '@safe-global/relay-kit';
 import { MetaTransactionData, OperationType } from '@safe-global/types-kit';
 import { parseUnits, encodeFunctionData, type EIP1193Provider } from 'viem';
 
-// Re-use ABI
-const ERC20_ABI = [
-    {
-        type: 'function',
-        name: 'transfer',
-        stateMutability: 'nonpayable',
-        inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }],
-        outputs: [{ type: 'bool' }]
-    }
-] as const;
+// ... (Keep your ERC20_ABI and SafeData types same as before) ...
+const ERC20_ABI = [{ type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] }] as const;
 
 export type SafeData = {
-    id: string; // unique id for React keys
+    id: string;
     address: string;
     version: string;
     threshold: number;
@@ -40,15 +38,22 @@ interface Props {
 export default function SafeCard({ data, currentUserAddress, config, getProvider, onRemove }: Props) {
     const [recipient, setRecipient] = useState('');
     const [amount, setAmount] = useState('');
-    const [status, setStatus] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [txHash, setTxHash] = useState('');
+
+    // Helper for clipboard
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text);
+        toast.success('Address copied');
+    };
 
     const handleTransfer = async () => {
-        if (!recipient || !amount) return;
+        if (!recipient || !amount) {
+            toast.error('Please fill in all fields');
+            return;
+        }
+
         setIsLoading(true);
-        setStatus('Preparing...');
-        setTxHash('');
+        const toastId = toast.loading('Initializing transaction...');
 
         try {
             const provider = await getProvider();
@@ -67,7 +72,8 @@ export default function SafeCard({ data, currentUserAddress, config, getProvider
             }];
 
             if (data.is4337Enabled) {
-                setStatus('Init Pimlico...');
+                toast.message('Signing UserOperation...', { id: toastId });
+
                 const safe4337Pack = await Safe4337Pack.init({
                     provider: provider as any,
                     signer: currentUserAddress,
@@ -76,23 +82,29 @@ export default function SafeCard({ data, currentUserAddress, config, getProvider
                     paymasterOptions: { isSponsored: true, paymasterUrl: config.paymasterUrl }
                 });
 
-                setStatus('Signing UserOp...');
                 const safeOperation = await safe4337Pack.createTransaction({ transactions });
                 const signedSafeOperation = await safe4337Pack.signSafeOperation(safeOperation);
 
-                setStatus('Submitting...');
+                toast.message('Submitting to Pimlico...', { id: toastId });
                 const userOpHash = await safe4337Pack.executeTransaction({ executable: signedSafeOperation });
 
-                setStatus('Bundling...');
+                // Polling
                 let receipt = null;
                 while (!receipt) {
                     await new Promise(r => setTimeout(r, 2000));
                     receipt = await safe4337Pack.getUserOperationReceipt(userOpHash);
                 }
-                setTxHash(receipt.receipt.transactionHash);
-                setStatus('Success!');
+
+                toast.success('Gasless Transfer Successful!', {
+                    id: toastId,
+                    action: {
+                        label: 'View',
+                        onClick: () => window.open(`${config.explorer}/tx/${receipt.receipt.transactionHash}`, '_blank')
+                    }
+                });
             } else {
-                setStatus('Init Standard...');
+                // Standard Flow
+                toast.message('Signing in Wallet...', { id: toastId });
                 const protocolKit = await Safe.init({
                     provider: provider as any,
                     safeAddress: data.address,
@@ -100,113 +112,139 @@ export default function SafeCard({ data, currentUserAddress, config, getProvider
                 });
 
                 const safeTransaction = await protocolKit.createTransaction({ transactions });
-                setStatus('Sign in Wallet...');
                 const signedSafeTx = await protocolKit.signTransaction(safeTransaction);
-                setStatus('Broadcasting...');
+
+                toast.message('Broadcasting...', { id: toastId });
                 const result = await protocolKit.executeTransaction(signedSafeTx);
-                setTxHash(result.hash);
-                setStatus('Success!');
+
+                toast.success('Transaction Broadcasted!', {
+                    id: toastId,
+                    action: {
+                        label: 'View',
+                        onClick: () => window.open(`${config.explorer}/tx/${result.hash}`, '_blank')
+                    }
+                });
             }
+            setAmount('');
+            setRecipient('');
         } catch (e: any) {
             console.error(e);
-            setStatus(`Error: ${e.message.slice(0, 50)}...`);
+            toast.error(`Failed: ${e.message.slice(0, 50)}...`, { id: toastId });
         } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden shadow-lg flex flex-col h-full">
+        <motion.div
+            layout
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="group relative bg-zinc-900/50 backdrop-blur-md border border-zinc-800 hover:border-zinc-700 rounded-2xl overflow-hidden shadow-2xl transition-all"
+        >
+            {/* Top Gradient Line */}
+            <div className={`h-1 w-full bg-gradient-to-r ${data.is4337Enabled ? 'from-purple-500 to-blue-500' : 'from-yellow-500 to-orange-500'}`} />
+
             {/* Header */}
-            <div className="p-5 border-b border-gray-700 bg-gray-900/50 flex justify-between items-start">
-                <div>
-                    <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-bold text-gray-100">Safe</h3>
-                        {data.isOwner ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">OWNER</span>
-                        ) : (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">WATCH ONLY</span>
-                        )}
+            <div className="p-5 flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-zinc-800 rounded-lg">
+                        {data.is4337Enabled ? <Zap className="w-5 h-5 text-purple-400" /> : <Shield className="w-5 h-5 text-yellow-400" />}
                     </div>
-                    <p className="font-mono text-xs text-gray-500 break-all">{data.address}</p>
+                    <div>
+                        <h3 className="font-bold text-zinc-100 flex items-center gap-2">
+                            Safe Wallet
+                            {data.isOwner && <span className="text-[10px] bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full">Owner</span>}
+                        </h3>
+                        <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs font-mono text-zinc-500">{data.address.slice(0, 6)}...{data.address.slice(-4)}</span>
+                            <button onClick={() => copyToClipboard(data.address)} className="text-zinc-600 hover:text-zinc-300"><Copy className="w-3 h-3" /></button>
+                            <a href={`${config.explorer}/address/${data.address}`} target="_blank" className="text-zinc-600 hover:text-zinc-300"><ExternalLink className="w-3 h-3" /></a>
+                        </div>
+                    </div>
                 </div>
-                <button onClick={() => onRemove(data.id)} className="text-gray-500 hover:text-white transition">
-                    ✕
+                <button
+                    onClick={() => onRemove(data.id)}
+                    className="text-zinc-600 hover:text-red-400 transition p-1 hover:bg-zinc-800 rounded"
+                >
+                    <Trash2 className="w-4 h-4" />
                 </button>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 divide-x divide-gray-700 border-b border-gray-700">
-                <div className="p-4 text-center">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider">Balance</p>
-                    <p className="text-xl font-bold text-blue-400">{data.balanceUSDC} <span className="text-sm text-gray-500">USDC</span></p>
-                </div>
-                <div className="p-4 text-center">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider">Mode</p>
-                    <p className={`text-sm font-bold ${data.is4337Enabled ? 'text-purple-400' : 'text-yellow-400'}`}>
-                        {data.is4337Enabled ? 'Gasless (4337)' : 'Standard'}
-                    </p>
+            {/* Balance Card */}
+            <div className="px-5 pb-5">
+                <div className="bg-zinc-950/50 border border-zinc-800/50 rounded-xl p-4 flex justify-between items-center">
+                    <div>
+                        <p className="text-xs text-zinc-500 font-medium uppercase tracking-wider">USDC Balance</p>
+                        <p className="text-2xl font-bold text-white mt-1">{data.balanceUSDC}</p>
+                    </div>
+                    <div className="h-10 w-10 bg-blue-500/10 rounded-full flex items-center justify-center">
+                        <span className="font-bold text-blue-500">$</span>
+                    </div>
                 </div>
             </div>
 
-            <div className="p-5 flex-1 flex flex-col gap-4">
-                {/* If NOT Owner: Show Owners List */}
-                {!data.isOwner && (
-                    <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                        <p className="text-xs text-red-300 font-semibold mb-2">You are not an owner. Owners are:</p>
-                        <ul className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar">
-                            {data.owners.map(owner => (
-                                <li key={owner} className="text-[10px] font-mono text-gray-400 bg-gray-900/50 p-1 rounded flex items-center gap-2">
-                                    <div className="w-4 h-4 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500"></div>
-                                    {owner}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
+            {/* Metadata Grid */}
+            <div className="px-5 py-3 border-t border-zinc-800 grid grid-cols-2 gap-4 text-xs">
+                <div className="flex items-center gap-2 text-zinc-400">
+                    <Activity className="w-3 h-3" />
+                    <span>Threshold: <span className="text-zinc-200">{data.threshold}/{data.owners.length}</span></span>
+                </div>
+                <div className="flex items-center gap-2 text-zinc-400">
+                    <Shield className="w-3 h-3" />
+                    <span>v{data.version}</span>
+                </div>
+            </div>
 
-                {/* If Owner: Show Transfer Form */}
-                {data.isOwner && (
-                    <div className="space-y-3 mt-auto">
-                        <div>
+            {/* Dynamic Content Area */}
+            <div className="p-5 bg-zinc-950/30 border-t border-zinc-800 min-h-[140px] flex flex-col">
+                {!data.isOwner ? (
+                    <div className="flex-1 flex flex-col justify-center items-center text-center space-y-2 opacity-60">
+                        <Users className="w-8 h-8 text-zinc-600" />
+                        <p className="text-sm text-zinc-400">Read-only view</p>
+                        <div className="flex -space-x-2">
+                            {data.owners.map((o, i) => (
+                                <div key={o} className="w-6 h-6 rounded-full bg-zinc-800 border border-zinc-900 flex items-center justify-center text-[8px] text-zinc-500" title={o}>
+                                    {i + 1}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        <p className="text-xs font-semibold text-zinc-500 uppercase">Execute Transfer</p>
+                        <div className="relative">
                             <input
-                                placeholder="Recipient Address (0x...)"
-                                className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 outline-none transition"
                                 value={recipient}
                                 onChange={e => setRecipient(e.target.value)}
+                                placeholder="Recipient Address (0x...)"
+                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition"
                             />
                         </div>
                         <div className="flex gap-2">
-                            <input
-                                placeholder="Amount"
-                                type="number"
-                                className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:border-blue-500 outline-none transition"
-                                value={amount}
-                                onChange={e => setAmount(e.target.value)}
-                            />
+                            <div className="relative flex-1">
+                                <input
+                                    value={amount}
+                                    onChange={e => setAmount(e.target.value)}
+                                    placeholder="0.00"
+                                    type="number"
+                                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-blue-500 transition"
+                                />
+                                <span className="absolute right-3 top-2 text-xs text-zinc-500 font-bold">USDC</span>
+                            </div>
                             <button
                                 onClick={handleTransfer}
                                 disabled={isLoading}
-                                className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded text-sm font-bold transition disabled:opacity-50 whitespace-nowrap"
+                                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 rounded-lg flex items-center justify-center transition-colors shadow-lg shadow-blue-900/20"
                             >
-                                {isLoading ? '...' : 'Send'}
+                                {isLoading ? <Activity className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                             </button>
                         </div>
-                        {status && <p className="text-xs text-center text-gray-400 animate-pulse">{status}</p>}
-                        {txHash && (
-                            <a href={`${config.explorer}/tx/${txHash}`} target="_blank" className="block text-center text-xs text-green-400 hover:underline">
-                                View Transaction ↗
-                            </a>
-                        )}
                     </div>
                 )}
             </div>
-
-            {/* Footer Info */}
-            <div className="px-5 py-2 bg-gray-900 border-t border-gray-700 flex justify-between text-[10px] text-gray-500">
-                <span>v{data.version}</span>
-                <span>Threshold: {data.threshold}/{data.owners.length}</span>
-            </div>
-        </div>
+        </motion.div>
     );
 }

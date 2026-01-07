@@ -7,7 +7,7 @@ import { formatUnits, createPublicClient, custom, type EIP1193Provider } from 'v
 import { base, baseSepolia } from 'viem/chains';
 import SafeCard, { SafeData } from './components/SafeCard';
 import { toast } from 'sonner';
-import { Plus, Power, Search, LayoutDashboard, ChevronDown } from 'lucide-react';
+import { Plus, Power, Search, LayoutDashboard, ChevronDown, Copy, Check, AlertCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import styles from './page.module.css';
 
@@ -64,7 +64,6 @@ const getStoredAddresses = (chainId: number): string[] => {
 
 const addAddressToStorage = (chainId: number, address: string) => {
   const current = getStoredAddresses(chainId);
-  // Case insensitive check
   if (!current.some(a => a.toLowerCase() === address.toLowerCase())) {
     localStorage.setItem(`safes_${chainId}`, JSON.stringify([...current, address]));
   }
@@ -88,12 +87,18 @@ export default function Home() {
   const [safes, setSafes] = useState<SafeData[]>([]);
   const [isInitializing, setIsInitializing] = useState(false);
   const [loadingSafe, setLoadingSafe] = useState(false);
+  const [debugMsg, setDebugMsg] = useState('');
+  const [hasCopiedUser, setHasCopiedUser] = useState(false);
   
-  // Store resolved names: { "0x123": "John" }
   const [knownOwners, setKnownOwners] = useState<Record<string, string>>({});
   const syncedRef = useRef(false);
 
-  // --- 1. SYNC USER TO DB ON LOGIN ---
+  // --- FIX: Cast to any to access specific Google props safely ---
+  const googleAccount = user?.linkedAccounts?.find((a) => a.type === 'google_oauth') as any;
+  const userDisplayName = googleAccount?.email || googleAccount?.name || 'Anonymous User';
+  const userWalletAddr = user?.wallet?.address;
+
+  // --- 1. SYNC USER TO DB ---
   useEffect(() => {
     const syncUserToDB = async () => {
       if (ready && authenticated && user && !syncedRef.current) {
@@ -104,25 +109,23 @@ export default function Home() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user })
           });
-          console.log("User Synced to DB");
+          console.log("[Sync] User Synced to DB");
         } catch (e) {
-          console.error("Sync failed", e);
+          console.error("[Sync] Failed", e);
         }
       }
     };
     syncUserToDB();
   }, [ready, authenticated, user]);
 
-  // --- 2. ROBUST PROVIDER GETTER ---
+  // --- 2. PROVIDER GETTER ---
   const getProvider = useCallback(async (targetChainId: number = currentChainId): Promise<EIP1193Provider> => {
     const userAddress = user?.wallet?.address?.toLowerCase();
     if (!userAddress) throw new Error('User address not found');
 
-    // Robust check: find wallet case-insensitively
     const wallet = wallets.find((w) => w.address.toLowerCase() === userAddress);
     
     if (!wallet) {
-      // If called before wallet is ready, throw specific error
       throw new Error('Wallet interface not ready yet');
     }
 
@@ -132,7 +135,7 @@ export default function Home() {
     return await wallet.getEthereumProvider() as unknown as EIP1193Provider;
   }, [wallets, user, currentChainId]);
 
-  // --- 3. FETCH DATA LOGIC ---
+  // --- 3. FETCH DATA ---
   const fetchSafeData = async (address: string, chainId: number, provider: any): Promise<SafeData> => {
     const config = CHAIN_CONFIG[chainId];
     const userAddress = user?.wallet?.address as `0x${string}`;
@@ -140,9 +143,10 @@ export default function Home() {
     // Init Safe SDK
     const protocolKit = await Safe.init({ provider: provider, safeAddress: address, signer: userAddress });
     
-    // Init Public Client for Balance
+    // Init Public Client
     const publicClient = createPublicClient({ chain: config.chainObj, transport: custom(provider) });
     
+    // Fetch all data
     const [owners, threshold, version, modules, isOwner, usdcBalanceRaw] = await Promise.all([
       protocolKit.getOwners(),
       protocolKit.getThreshold(),
@@ -162,79 +166,109 @@ export default function Home() {
     };
   };
 
-  // --- 4. HYDRATE SAFES (Wait for Wallet) ---
+  // --- 4. HYDRATION LOOP ---
   useEffect(() => {
     const hydrateSafes = async () => {
-      // CRITICAL: Wait until the specific wallet is found in the wallets array
-      const currentWallet = wallets.find(w => w.address.toLowerCase() === user?.wallet?.address?.toLowerCase());
-      
-      if (!authenticated || !user?.wallet || !currentWallet) return;
-
-      setIsInitializing(true);
-      setSafes([]);
-      setKnownOwners({});
-
-      try {
-        const storedAddresses = getStoredAddresses(currentChainId);
+        // Log status to console
+        console.log(`[Hydrate] Checking... Auth: ${authenticated}, Wallet in User: ${!!user?.wallet}, Wallet loaded: ${wallets.length}`);
         
-        if (storedAddresses.length === 0) {
-          setIsInitializing(false);
-          return;
+        const currentWallet = wallets.find(w => w.address.toLowerCase() === user?.wallet?.address?.toLowerCase());
+        
+        // Visual Debug for missing wallet
+        if (authenticated && user?.wallet && !currentWallet) {
+            setDebugMsg(`Connecting to wallet... (${wallets.length} found)`);
+            return;
         }
 
-        const provider = await getProvider(currentChainId);
-        
-        // Fetch all Safes in parallel
-        const results = await Promise.allSettled(storedAddresses.map(addr => fetchSafeData(addr, currentChainId, provider)));
-        
-        const loadedSafes: SafeData[] = [];
-        let allOwners: string[] = [];
+        if (!authenticated || !user?.wallet || !currentWallet) return;
 
-        results.forEach((res) => {
-          if (res.status === 'fulfilled') {
-            loadedSafes.push(res.value);
-            allOwners = [...allOwners, ...res.value.owners];
-          } else {
-            console.error("Failed to load safe:", res.reason);
-          }
-        });
+        setIsInitializing(true);
+        setDebugMsg('Scanning blockchain frequencies...');
+        setSafes([]);
+        setKnownOwners({});
 
-        setSafes(loadedSafes);
-
-        // Batch Resolve Owners via API
-        if (allOwners.length > 0) {
-            const uniqueOwners = Array.from(new Set(allOwners));
-            try {
-                const resp = await fetch('/api/users/resolve', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ addresses: uniqueOwners })
-                });
-                const data = await resp.json();
-                if (data.map) {
-                    setKnownOwners(data.map);
-                }
-            } catch (err) {
-                console.error("Failed to resolve owners", err);
+        try {
+            const storedAddresses = getStoredAddresses(currentChainId);
+            console.log(`[Hydrate] Found ${storedAddresses.length} addresses for Chain ${currentChainId}`);
+            
+            if (storedAddresses.length === 0) {
+                console.log("[Hydrate] No addresses to load.");
+                setIsInitializing(false);
+                setDebugMsg('');
+                return;
             }
-        }
 
-      } catch (err: any) {
-        console.error(err);
-        // Ignore "not ready" errors, they will resolve on next render
-        if (err.message !== 'Wallet interface not ready yet') {
-             toast.error('Initialization failed');
+            const provider = await getProvider(currentChainId);
+            
+            // Parallel Fetch
+            const results = await Promise.allSettled(storedAddresses.map(addr => fetchSafeData(addr, currentChainId, provider)));
+            
+            const loadedSafes: SafeData[] = [];
+            let allOwners: string[] = [];
+            let errorCount = 0;
+
+            results.forEach((res, index) => {
+                if (res.status === 'fulfilled') {
+                    loadedSafes.push(res.value);
+                    allOwners = [...allOwners, ...res.value.owners];
+                } else {
+                    console.error(`[Hydrate] Failed to load ${storedAddresses[index]}:`, res.reason);
+                    errorCount++;
+                }
+            });
+
+            console.log(`[Hydrate] Loaded ${loadedSafes.length} safes. Errors: ${errorCount}`);
+            
+            if (loadedSafes.length === 0 && errorCount > 0) {
+                 setDebugMsg(`Failed to load targets. Check console for RPC errors.`);
+            } else {
+                 setDebugMsg('');
+            }
+
+            setSafes(loadedSafes);
+
+            // Resolve Owners
+            if (allOwners.length > 0) {
+                const uniqueOwners = Array.from(new Set(allOwners));
+                try {
+                    const resp = await fetch('/api/users/resolve', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ addresses: uniqueOwners })
+                    });
+                    const data = await resp.json();
+                    if (data.map) {
+                        setKnownOwners(data.map);
+                    }
+                } catch (err) {
+                    console.error("[Hydrate] Owner resolve error", err);
+                }
+            }
+
+        } catch (err: any) {
+            console.error("[Hydrate] Critical Error:", err);
+            if (err.message !== 'Wallet interface not ready yet') {
+                toast.error('Initialization failed');
+                setDebugMsg(`Error: ${err.message}`);
+            }
+        } finally {
+            setIsInitializing(false);
         }
-      } finally {
-        setIsInitializing(false);
-      }
     };
 
     hydrateSafes();
-  // DEPENDENCIES: Include wallets.length so it re-runs when wallet initializes
   }, [currentChainId, authenticated, user?.wallet?.address, wallets.length, getProvider]); 
 
   // --- ACTIONS ---
+
+  const copyUserAddress = () => {
+    if (userWalletAddr) {
+        navigator.clipboard.writeText(userWalletAddr);
+        setHasCopiedUser(true);
+        setTimeout(() => setHasCopiedUser(false), 2000);
+        toast.success("My Address Copied");
+    }
+  }
 
   const handleAddSafe = async () => {
     if (!safeAddressInput || !authenticated) return;
@@ -242,7 +276,6 @@ export default function Home() {
       toast.error('Invalid coordinates format!');
       return;
     }
-    // Case insensitive check
     if (safes.find(s => s.address.toLowerCase() === safeAddressInput.toLowerCase())) {
       toast.error('Already tracking this vault!');
       return;
@@ -256,7 +289,6 @@ export default function Home() {
       setSafes(prev => [...prev, newSafe]);
       addAddressToStorage(currentChainId, newSafe.address);
       
-      // Resolve new owners immediately
       const resp = await fetch('/api/users/resolve', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -297,6 +329,18 @@ export default function Home() {
           </div>
           {authenticated && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                
+              {/* User Profile Section */}
+              <div className={styles.userProfile}>
+                <div className={styles.userDetails}>
+                    <span className={styles.userName}>{userDisplayName}</span>
+                    <button onClick={copyUserAddress} className={styles.userAddressBtn}>
+                        {userWalletAddr?.slice(0,6)}...{userWalletAddr?.slice(-4)}
+                        {hasCopiedUser ? <Check size={10} color="#22c55e" /> : <Copy size={10} />}
+                    </button>
+                </div>
+              </div>
+
               <div className={styles.networkControl}>
                 <select
                   className={styles.networkSelect}
@@ -355,8 +399,10 @@ export default function Home() {
 
             <section>
               {isInitializing ? (
-                <div style={{ textAlign: 'center', padding: 80, color: '#71717a' }}>
+                <div className={styles.loadingState}>
+                  <div className="spin-anim"><Search size={32} /></div>
                   <p>Calibrating sensors...</p>
+                  {debugMsg && <span className={styles.debugInfo}>{debugMsg}</span>}
                 </div>
               ) : safes.length === 0 ? (
                 <motion.div
@@ -365,6 +411,7 @@ export default function Home() {
                 >
                   <LayoutDashboard size={48} style={{ opacity: 0.5, marginBottom: 16 }} />
                   <p>No targets found. Import a contract address to begin recovery.</p>
+                  {debugMsg && <p className={styles.debugInfo}>{debugMsg}</p>}
                 </motion.div>
               ) : (
                 <div className={styles.grid}>

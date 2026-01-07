@@ -222,3 +222,63 @@
     border-radius: 16px;
     color: #52525b;
 }
+
+.userProfile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-right: 12px;
+    padding-right: 12px;
+    border-right: 1px solid #3f3f46;
+}
+
+.userDetails {
+    text-align: right;
+    line-height: 1.2;
+}
+
+.userName {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: white;
+}
+
+.userAddressBtn {
+    background: none;
+    border: none;
+    color: #a1a1aa;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+}
+
+.userAddressBtn:hover {
+    color: var(--accent-purple);
+}
+
+/* Debug / Loading State */
+.loadingState {
+    text-align: center;
+    padding: 80px;
+    color: #71717a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.debugInfo {
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    background: #27272a;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-top: 12px;
+    color: #ef4444;
+    /* Red text for visibility */
+}

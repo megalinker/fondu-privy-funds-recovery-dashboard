@@ -11,7 +11,8 @@ import { Plus, Power, Search, LayoutDashboard, ChevronDown } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion';
 import styles from './page.module.css';
 
-// 2. Default List of Safes
+// --- CONSTANTS ---
+
 const DEFAULT_SAFES = [
   "0xeAB30A69AC1384e7b88b6210E1ea9caC50FaEB6e",
   "0xc8eC161985773Bcc8Ba4548325c1afc6e7133983",
@@ -47,39 +48,41 @@ const CHAIN_CONFIG: any = {
   }
 };
 
+// --- HELPERS ---
+
 const getStoredAddresses = (chainId: number): string[] => {
   if (typeof window === 'undefined') return [];
   const raw = localStorage.getItem(`safes_${chainId}`);
   const stored = raw ? JSON.parse(raw) : [];
   
-  // Merge defaults with stored (only for Base Mainnet 8453, or both if you prefer)
+  // Only include defaults for Base Mainnet (8453)
   const defaults = chainId === 8453 ? DEFAULT_SAFES : [];
   
-  // Return unique
+  // Return unique list
   return Array.from(new Set([...defaults, ...stored]));
 };
 
 const addAddressToStorage = (chainId: number, address: string) => {
   const current = getStoredAddresses(chainId);
-  if (!current.includes(address)) {
-    // Only store what isn't default to keep localStorage clean, or just store everything
+  // Case insensitive check
+  if (!current.some(a => a.toLowerCase() === address.toLowerCase())) {
     localStorage.setItem(`safes_${chainId}`, JSON.stringify([...current, address]));
   }
 };
 
 const removeAddressFromStorage = (chainId: number, address: string) => {
-  // If it's a default address, we can't really remove it permanently from code, 
-  // but we can remove it from view. For now, let's just update storage.
   const current = getStoredAddresses(chainId);
-  const updated = current.filter(a => a !== address);
+  const updated = current.filter(a => a.toLowerCase() !== address.toLowerCase());
   localStorage.setItem(`safes_${chainId}`, JSON.stringify(updated));
 };
+
+// --- COMPONENT ---
 
 export default function Home() {
   const { login, authenticated, logout, user, ready } = usePrivy();
   const { wallets } = useWallets();
 
-  // 1. Base (8453) is now default
+  // Default to Base Mainnet (8453)
   const [currentChainId, setCurrentChainId] = useState<number>(8453);
   const [safeAddressInput, setSafeAddressInput] = useState('');
   const [safes, setSafes] = useState<SafeData[]>([]);
@@ -90,7 +93,7 @@ export default function Home() {
   const [knownOwners, setKnownOwners] = useState<Record<string, string>>({});
   const syncedRef = useRef(false);
 
-  // --- SYNC DB ON LOGIN ---
+  // --- 1. SYNC USER TO DB ON LOGIN ---
   useEffect(() => {
     const syncUserToDB = async () => {
       if (ready && authenticated && user && !syncedRef.current) {
@@ -110,19 +113,36 @@ export default function Home() {
     syncUserToDB();
   }, [ready, authenticated, user]);
 
+  // --- 2. ROBUST PROVIDER GETTER ---
   const getProvider = useCallback(async (targetChainId: number = currentChainId): Promise<EIP1193Provider> => {
-    const wallet = wallets.find((w) => w.address === user?.wallet?.address);
-    if (!wallet) throw new Error('Wallet not found');
+    const userAddress = user?.wallet?.address?.toLowerCase();
+    if (!userAddress) throw new Error('User address not found');
+
+    // Robust check: find wallet case-insensitively
+    const wallet = wallets.find((w) => w.address.toLowerCase() === userAddress);
+    
+    if (!wallet) {
+      // If called before wallet is ready, throw specific error
+      throw new Error('Wallet interface not ready yet');
+    }
+
     const walletChainId = Number(wallet.chainId.split(':')[1]);
     if (walletChainId !== targetChainId) await wallet.switchChain(targetChainId);
+    
     return await wallet.getEthereumProvider() as unknown as EIP1193Provider;
   }, [wallets, user, currentChainId]);
 
+  // --- 3. FETCH DATA LOGIC ---
   const fetchSafeData = async (address: string, chainId: number, provider: any): Promise<SafeData> => {
     const config = CHAIN_CONFIG[chainId];
     const userAddress = user?.wallet?.address as `0x${string}`;
+    
+    // Init Safe SDK
     const protocolKit = await Safe.init({ provider: provider, safeAddress: address, signer: userAddress });
+    
+    // Init Public Client for Balance
     const publicClient = createPublicClient({ chain: config.chainObj, transport: custom(provider) });
+    
     const [owners, threshold, version, modules, isOwner, usdcBalanceRaw] = await Promise.all([
       protocolKit.getOwners(),
       protocolKit.getThreshold(),
@@ -131,7 +151,9 @@ export default function Home() {
       protocolKit.isOwner(userAddress),
       publicClient.readContract({ address: config.usdcAddress, abi: ERC20_ABI, functionName: 'balanceOf', args: [address as `0x${string}`] })
     ]);
+    
     const has4337 = modules.some((m: string) => m.toLowerCase() === config.moduleAddress.toLowerCase());
+    
     return {
       id: `${chainId}-${address}`,
       address, version, threshold, owners,
@@ -140,22 +162,29 @@ export default function Home() {
     };
   };
 
-  // --- HYDRATE AND RESOLVE OWNERS ---
+  // --- 4. HYDRATE SAFES (Wait for Wallet) ---
   useEffect(() => {
     const hydrateSafes = async () => {
-      if (!authenticated || !user?.wallet) return;
+      // CRITICAL: Wait until the specific wallet is found in the wallets array
+      const currentWallet = wallets.find(w => w.address.toLowerCase() === user?.wallet?.address?.toLowerCase());
+      
+      if (!authenticated || !user?.wallet || !currentWallet) return;
+
       setIsInitializing(true);
       setSafes([]);
       setKnownOwners({});
 
       try {
         const storedAddresses = getStoredAddresses(currentChainId);
+        
         if (storedAddresses.length === 0) {
           setIsInitializing(false);
           return;
         }
 
         const provider = await getProvider(currentChainId);
+        
+        // Fetch all Safes in parallel
         const results = await Promise.allSettled(storedAddresses.map(addr => fetchSafeData(addr, currentChainId, provider)));
         
         const loadedSafes: SafeData[] = [];
@@ -165,12 +194,14 @@ export default function Home() {
           if (res.status === 'fulfilled') {
             loadedSafes.push(res.value);
             allOwners = [...allOwners, ...res.value.owners];
+          } else {
+            console.error("Failed to load safe:", res.reason);
           }
         });
 
         setSafes(loadedSafes);
 
-        // --- BATCH RESOLVE OWNERS FROM DB ---
+        // Batch Resolve Owners via API
         if (allOwners.length > 0) {
             const uniqueOwners = Array.from(new Set(allOwners));
             try {
@@ -188,15 +219,22 @@ export default function Home() {
             }
         }
 
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
-        toast.error('Initialization failed');
+        // Ignore "not ready" errors, they will resolve on next render
+        if (err.message !== 'Wallet interface not ready yet') {
+             toast.error('Initialization failed');
+        }
       } finally {
         setIsInitializing(false);
       }
     };
+
     hydrateSafes();
-  }, [currentChainId, authenticated, user?.wallet?.address, getProvider]); // Removed 'user' to prevent loops, relying on wallet address
+  // DEPENDENCIES: Include wallets.length so it re-runs when wallet initializes
+  }, [currentChainId, authenticated, user?.wallet?.address, wallets.length, getProvider]); 
+
+  // --- ACTIONS ---
 
   const handleAddSafe = async () => {
     if (!safeAddressInput || !authenticated) return;
@@ -204,14 +242,17 @@ export default function Home() {
       toast.error('Invalid coordinates format!');
       return;
     }
+    // Case insensitive check
     if (safes.find(s => s.address.toLowerCase() === safeAddressInput.toLowerCase())) {
       toast.error('Already tracking this vault!');
       return;
     }
+
     setLoadingSafe(true);
     try {
       const provider = await getProvider();
       const newSafe = await fetchSafeData(safeAddressInput, currentChainId, provider);
+      
       setSafes(prev => [...prev, newSafe]);
       addAddressToStorage(currentChainId, newSafe.address);
       
@@ -332,7 +373,7 @@ export default function Home() {
                       <SafeCard
                         key={safe.id}
                         data={safe}
-                        knownOwners={knownOwners} // Pass the map
+                        knownOwners={knownOwners}
                         currentUserAddress={user?.wallet?.address!}
                         config={CHAIN_CONFIG[currentChainId]}
                         getProvider={() => getProvider(currentChainId)}

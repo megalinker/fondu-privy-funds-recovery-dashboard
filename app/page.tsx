@@ -79,9 +79,10 @@ const removeAddressFromStorage = (chainId: number, address: string) => {
 
 export default function Home() {
   const { login, authenticated, logout, user, ready } = usePrivy();
-  const { wallets } = useWallets();
+  
+  // FIX 1: Extract 'ready' specifically from useWallets
+  const { wallets, ready: walletsReady } = useWallets();
 
-  // Default to Base Mainnet (8453)
   const [currentChainId, setCurrentChainId] = useState<number>(8453);
   const [safeAddressInput, setSafeAddressInput] = useState('');
   const [safes, setSafes] = useState<SafeData[]>([]);
@@ -93,7 +94,6 @@ export default function Home() {
   const [knownOwners, setKnownOwners] = useState<Record<string, string>>({});
   const syncedRef = useRef(false);
 
-  // --- FIX: Cast to any to access specific Google props safely ---
   const googleAccount = user?.linkedAccounts?.find((a) => a.type === 'google_oauth') as any;
   const userDisplayName = googleAccount?.email || googleAccount?.name || 'Anonymous User';
   const userWalletAddr = user?.wallet?.address;
@@ -169,14 +169,21 @@ export default function Home() {
   // --- 4. HYDRATION LOOP ---
   useEffect(() => {
     const hydrateSafes = async () => {
-        // Log status to console
-        console.log(`[Hydrate] Checking... Auth: ${authenticated}, Wallet in User: ${!!user?.wallet}, Wallet loaded: ${wallets.length}`);
+        // FIX 2: Wait for wallet subsystem to be ready
+        if (!ready || !walletsReady) {
+            if (authenticated) setDebugMsg('Initializing wallet subsystem...');
+            return;
+        }
+
+        console.log(`[Hydrate] Checking... Auth: ${authenticated}, Wallet in User: ${!!user?.wallet}, Wallets Found: ${wallets.length}`);
         
         const currentWallet = wallets.find(w => w.address.toLowerCase() === user?.wallet?.address?.toLowerCase());
         
-        // Visual Debug for missing wallet
         if (authenticated && user?.wallet && !currentWallet) {
             setDebugMsg(`Connecting to wallet... (${wallets.length} found)`);
+            // Usually if we reach here with walletsReady=true but 0 wallets, 
+            // the user might need to refresh or the account is desynced.
+            // But usually checking walletsReady fixes the race condition.
             return;
         }
 
@@ -200,7 +207,6 @@ export default function Home() {
 
             const provider = await getProvider(currentChainId);
             
-            // Parallel Fetch
             const results = await Promise.allSettled(storedAddresses.map(addr => fetchSafeData(addr, currentChainId, provider)));
             
             const loadedSafes: SafeData[] = [];
@@ -257,7 +263,8 @@ export default function Home() {
     };
 
     hydrateSafes();
-  }, [currentChainId, authenticated, user?.wallet?.address, wallets.length, getProvider]); 
+  // FIX 3: Add walletsReady to dependencies
+  }, [currentChainId, authenticated, user?.wallet?.address, wallets.length, walletsReady, ready, getProvider]); 
 
   // --- ACTIONS ---
 

@@ -25,7 +25,8 @@ export async function POST(request: Request) {
     // Create a map: { "0x123...": "John Doe (john@gmail.com)" }
     const userMap: Record<string, string> = {};
     
-    users.forEach(u => {
+    // FIX: Added explicit type annotation to 'u'
+    users.forEach((u: { walletAddress: string; email: string | null; name: string | null }) => {
       if (u.email || u.name) {
         userMap[u.walletAddress] = u.email || u.name || '';
       }
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ map: userMap });
   } catch (error) {
+    console.error(error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -1,11 +1,10 @@
-// --- File: app/components/SafeCard.tsx ---
 'use client';
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
-    Zap, Copy, Trash2, Rocket, Shield, Check
+    Zap, Copy, Trash2, Rocket, Shield, Check, Users, User
 } from 'lucide-react';
 import Safe from '@safe-global/protocol-kit';
 import { Safe4337Pack } from '@safe-global/relay-kit';
@@ -13,7 +12,7 @@ import { MetaTransactionData, OperationType } from '@safe-global/types-kit';
 import { parseUnits, encodeFunctionData, type EIP1193Provider } from 'viem';
 import styles from './SafeCard.module.css';
 
-// ... (Keep SafeData and ERC20_ABI same) ...
+// Standard ERC20 Transfer ABI
 const ERC20_ABI = [{ type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] }] as const;
 
 export type SafeData = {
@@ -32,11 +31,12 @@ interface Props {
     data: SafeData;
     currentUserAddress: string;
     config: any;
+    knownOwners: Record<string, string>; // Map of address -> Name/Email
     getProvider: () => Promise<EIP1193Provider>;
     onRemove: (id: string) => void;
 }
 
-export default function SafeCard({ data, currentUserAddress, config, getProvider, onRemove }: Props) {
+export default function SafeCard({ data, currentUserAddress, config, knownOwners, getProvider, onRemove }: Props) {
     const [recipient, setRecipient] = useState('');
     const [amount, setAmount] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -61,11 +61,14 @@ export default function SafeCard({ data, currentUserAddress, config, getProvider
 
         try {
             const provider = await getProvider();
+            
+            // Prepare ERC20 transfer data
             const transferData = encodeFunctionData({
                 abi: ERC20_ABI,
                 functionName: 'transfer',
                 args: [recipient as `0x${string}`, parseUnits(amount, 6)]
             });
+
             const transactions: MetaTransactionData[] = [{
                 to: config.usdcAddress,
                 value: '0',
@@ -74,7 +77,9 @@ export default function SafeCard({ data, currentUserAddress, config, getProvider
             }];
 
             if (data.is4337Enabled) {
+                // --- GASLESS PATH (Relay Kit) ---
                 toast.message('Signing UserOperation...', { id: toastId });
+                
                 const safe4337Pack = await Safe4337Pack.init({
                     provider: provider as any,
                     signer: currentUserAddress,
@@ -82,29 +87,46 @@ export default function SafeCard({ data, currentUserAddress, config, getProvider
                     options: { safeAddress: data.address },
                     paymasterOptions: { isSponsored: true, paymasterUrl: config.paymasterUrl }
                 });
+
                 const safeOperation = await safe4337Pack.createTransaction({ transactions });
                 const signedSafeOperation = await safe4337Pack.signSafeOperation(safeOperation);
+                
                 toast.message('Broadcasting...', { id: toastId });
                 const userOpHash = await safe4337Pack.executeTransaction({ executable: signedSafeOperation });
 
+                // Wait for receipt
                 let receipt = null;
                 while (!receipt) {
                     await new Promise(r => setTimeout(r, 2000));
                     receipt = await safe4337Pack.getUserOperationReceipt(userOpHash);
                 }
+                
                 toast.success('Funds extracted successfully!', { id: toastId });
+
             } else {
+                // --- STANDARD PATH (Protocol Kit) ---
                 toast.message('Wallet Signature Required...', { id: toastId });
-                const protocolKit = await Safe.init({ provider: provider as any, safeAddress: data.address, signer: currentUserAddress });
+                
+                const protocolKit = await Safe.init({ 
+                    provider: provider as any, 
+                    safeAddress: data.address, 
+                    signer: currentUserAddress 
+                });
+
                 const safeTransaction = await protocolKit.createTransaction({ transactions });
                 const signedSafeTx = await protocolKit.signTransaction(safeTransaction);
+                
                 toast.message('Executing...', { id: toastId });
                 await protocolKit.executeTransaction(signedSafeTx);
+                
                 toast.success('Funds extracted successfully!', { id: toastId });
             }
+
+            // Cleanup
             setAmount('');
             setRecipient('');
             setIsExpanded(false);
+
         } catch (e: any) {
             console.error(e);
             toast.error(`Error: ${e.message.slice(0, 30)}...`, { id: toastId });
@@ -155,12 +177,57 @@ export default function SafeCard({ data, currentUserAddress, config, getProvider
                 </div>
             </div>
 
+            {/* NEW: Owner List Area */}
+            <div style={{ padding: '0 20px 20px' }}>
+                <span className={styles.label} style={{ marginBottom: 8, display: 'block' }}>
+                    Identified Signers ({data.threshold}/{data.owners.length})
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {data.owners.map(owner => {
+                        const normalizedOwner = owner.toLowerCase();
+                        const knownIdentity = knownOwners[normalizedOwner];
+                        
+                        return (
+                            <div key={owner} style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '10px', 
+                                fontSize: '0.8rem', 
+                                color: '#e4e4e7',
+                                background: '#27272a', 
+                                padding: '8px 10px', 
+                                borderRadius: '6px',
+                                border: knownIdentity ? '1px solid rgba(34, 197, 94, 0.2)' : '1px solid transparent'
+                            }}>
+                                <User size={14} color={knownIdentity ? '#22c55e' : '#71717a'} />
+                                
+                                {knownIdentity ? (
+                                    <div style={{display: 'flex', flexDirection: 'column', lineHeight: 1.2}}>
+                                        <span style={{fontWeight: 600, color: '#f4f4f5'}}>{knownIdentity}</span>
+                                        <span style={{fontSize: '0.7rem', color: '#71717a', fontFamily: 'var(--font-mono)'}}>
+                                            {owner.slice(0, 6)}...{owner.slice(-4)}
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <span style={{fontFamily: 'var(--font-mono)', color: '#a1a1aa'}}>
+                                        {owner.slice(0, 8)}...{owner.slice(-6)}
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
             {/* Actions */}
             <div className={styles.actions}>
                 <div className={styles.statusRow}>
-                    <span className={styles.owners}>
-                        {data.threshold}/{data.owners.length} Signers
-                    </span>
+                    <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
+                        <Users size={14} color="#71717a" />
+                        <span style={{fontSize: '0.75rem', color: '#71717a'}}>
+                            Vault Status
+                        </span>
+                    </div>
 
                     {data.isOwner ? (
                         <button
@@ -170,7 +237,9 @@ export default function SafeCard({ data, currentUserAddress, config, getProvider
                             {isExpanded ? 'Cancel' : 'Recover Funds'}
                         </button>
                     ) : (
-                        <span style={{ fontSize: '0.8rem', color: '#71717a' }}>Read Only</span>
+                        <span style={{ fontSize: '0.8rem', color: '#71717a', background: '#27272a', padding: '4px 8px', borderRadius: '4px' }}>
+                            Read Only
+                        </span>
                     )}
                 </div>
 

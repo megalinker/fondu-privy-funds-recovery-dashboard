@@ -9,7 +9,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
       config={{
-        defaultChain: baseSepolia,
+        defaultChain: base, 
         supportedChains: [base, baseSepolia],
         appearance: { theme: 'dark', accentColor: '#3b82f6' },
       }}
